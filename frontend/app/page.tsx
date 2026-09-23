@@ -61,8 +61,8 @@ export default function OrderEntryPage() {
     load();
   }, []);
 
-    const selectedRestaurant = restaurants.find((r) => r.id === restaurantId);
-  const selectedRider = riders.find((r) => r.id === riderId);   // NEW
+  const selectedRestaurant = restaurants.find((r) => r.id === restaurantId);
+  const selectedRider = riders.find((r) => r.id === riderId);
 
   // Every field defaults to 0 when empty — parseFloat(x) || 0 handles
   // both "" and invalid input the same way.
@@ -77,7 +77,7 @@ export default function OrderEntryPage() {
     const riderTipVal = parseFloat(riderTip) || 0;
     const received = parseFloat(amountReceived) || 0;
     const commissionPct = selectedRestaurant?.commission_pct ?? 0;
-    const isPlatformRider = selectedRider?.is_platform_rider ?? false;   // NEW
+    const isPlatformRider = selectedRider?.is_platform_rider ?? false;
 
     const finalDelivery = delivery + adj;
     const customerTotal = food + finalDelivery;
@@ -88,12 +88,18 @@ export default function OrderEntryPage() {
     const amountDue = Math.max(0, customerTotal - received);
     const riderDeliveryEarning = fuelVal + 0.5 * (finalDelivery - fuelVal);
     const riderEarning = riderDeliveryEarning + effectiveTip;
-    // Platform-owned rider (e.g. "Self"): the delivery margin + tip stays
-    // in platform revenue instead of being paid out. Mirrors the backend's
-    // calculate_order_financials() branch exactly.
-    const mealBearRevenue = isPlatformRider
-      ? commissionAmount + finalDelivery
-      : commissionAmount + finalDelivery - riderEarning;
+
+    // Total revenue = everything collected on the order, tip included.
+    // Mirrors the backend: total_revenue = customer_total + effective_tip.
+    const totalRevenue = customerTotal + effectiveTip;
+
+    // Platform earning (stored as meal_bear_revenue on the backend).
+    // The tip is in revenue AND in the rider's earning, so it cancels out for a
+    // normal rider. For the platform-owned rider nothing is paid out, so the
+    // rider's earning is not subtracted.
+    const platformEarning = isPlatformRider
+      ? totalRevenue - restaurantPayable
+      : totalRevenue - restaurantPayable - riderEarning;
 
     return {
       finalDelivery,
@@ -104,7 +110,8 @@ export default function OrderEntryPage() {
       effectiveTip,
       amountDue,
       riderEarning,
-      mealBearRevenue,
+      totalRevenue,
+      platformEarning,
       isNegativeDelivery: finalDelivery < 0,
     };
   }, [foodAmount, deliveryCharge, adjustment, fuel, riderTip, amountReceived, selectedRestaurant, selectedRider]);
@@ -295,11 +302,11 @@ export default function OrderEntryPage() {
             >
               <span className="flex items-center gap-2 text-[13px] font-semibold text-[#201A2E]">
                 <span className="h-3.5 w-1 rounded-full bg-[#6D28D9]" />
-                Meal Bear revenue
+                Platform earning
               </span>
               <span className="flex items-center gap-1.5">
                 <span className="text-[15px] font-bold text-[#5B21B6]">
-                  Rs {preview.mealBearRevenue.toFixed(2)}
+                  Rs {preview.platformEarning.toFixed(2)}
                 </span>
                 <svg
                   viewBox="0 0 20 20"
@@ -325,13 +332,22 @@ export default function OrderEntryPage() {
             )}
           </section>
 
+          {/* Total revenue — small, at the bottom */}
+          <div className="flex items-center justify-between px-1 text-[11px] text-[#8B85A0]">
+            <span>Total revenue (incl. tip)</span>
+            <span className="font-medium">Rs {preview.totalRevenue.toFixed(2)}</span>
+          </div>
+
           {submitError && (
             <p className="text-xs text-[#DC2626] bg-[#FEF2F2] rounded-lg px-2.5 py-2">
               {submitError}
             </p>
           )}
         </div>
-        <div className="shrink-0 border-t border-[#E6E1F2] bg-white px-4 py-2.5">
+      </form>
+
+      {/* Submit bar — always visible, part of the layout, not floating over content */}
+      <div className="shrink-0 border-t border-[#E6E1F2] bg-white px-4 py-2.5">
         <div className="max-w-md mx-auto">
           <button
             type="submit"
@@ -347,10 +363,6 @@ export default function OrderEntryPage() {
           </button>
         </div>
       </div>
-      </form>
-
-      {/* Submit bar — always visible, part of the layout, not floating over content */}
-      
     </div>
   );
 }
@@ -521,13 +533,19 @@ function SuccessScreen({
             <div className="flex items-center justify-between px-3 py-2.5 bg-[#F3F0FA] border-t border-[#E6E1F2]">
               <span className="flex items-center gap-2 text-[13px] font-semibold text-[#201A2E]">
                 <span className="h-3.5 w-1 rounded-full bg-[#6D28D9]" />
-                Meal Bear revenue
+                Platform earning
               </span>
               <span className="text-[15px] font-bold text-[#5B21B6]">
                 Rs {order.meal_bear_revenue.toFixed(2)}
               </span>
             </div>
           </section>
+
+          {/* Total revenue — small, at the bottom */}
+          <div className="flex items-center justify-between px-1 text-[11px] text-[#8B85A0]">
+            <span>Total revenue (incl. tip)</span>
+            <span className="font-medium">Rs {order.total_revenue.toFixed(2)}</span>
+          </div>
 
           <button
             onClick={onNewOrder}

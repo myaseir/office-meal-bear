@@ -54,12 +54,14 @@ function StatCard({ label, value, icon: Icon, tone = "default" }: StatCardProps)
 // --- date bucketing helpers ---
 // order_date / expense_date are already correct "business date" strings
 // (YYYY-MM-DD) thanks to the getBusinessDate() fix on the order entry form.
+// All date math below is done in UTC so the result never shifts by a day
+// depending on the viewer's timezone.
 
 function startOfBusinessWeek(businessDate: string): string {
-  const d = new Date(businessDate + "T00:00:00");
-  const day = d.getDay(); // 0 = Sun
+  const d = new Date(businessDate + "T00:00:00Z");
+  const day = d.getUTCDay(); // 0 = Sun
   const diffToMonday = day === 0 ? 6 : day - 1;
-  d.setDate(d.getDate() - diffToMonday);
+  d.setUTCDate(d.getUTCDate() - diffToMonday);
   return d.toISOString().slice(0, 10);
 }
 
@@ -75,13 +77,20 @@ interface PeriodTotals {
   orderCount: number;
 }
 
-function sumPeriod(orders: OrderResponse[], expenses: Expense[], from: string): PeriodTotals {
+// Inclusive range [from, to]. `to` stops future-dated entries from leaking
+// into "Today" / "This week" / "This month".
+function sumPeriod(
+  orders: OrderResponse[],
+  expenses: Expense[],
+  from: string,
+  to: string
+): PeriodTotals {
   const orderTotals = orders
-    .filter((o) => o.order_date >= from)
+    .filter((o) => o.order_date >= from && o.order_date <= to)
     .reduce(
       (acc, o) => {
-        acc.revenue += o.customer_total;
-        acc.grossProfit += o.meal_bear_revenue;
+        acc.revenue += o.total_revenue; // customer_total + tip
+        acc.grossProfit += o.meal_bear_revenue; // already skips platform-rider cost
         acc.orderCount += 1;
         return acc;
       },
@@ -89,7 +98,7 @@ function sumPeriod(orders: OrderResponse[], expenses: Expense[], from: string): 
     );
 
   const expenseTotal = expenses
-    .filter((e) => e.expense_date >= from)
+    .filter((e) => e.expense_date >= from && e.expense_date <= to)
     .reduce((sum, e) => sum + e.amount, 0);
 
   return {
@@ -146,13 +155,20 @@ export function PlatformOverview({ orders, expenses }: Props) {
   const fmt = (n: number) =>
     n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+  // Cancelled orders must not count toward any revenue/profit figure.
+  const activeOrders = useMemo(
+    () => orders.filter((o) => o.status !== "cancelled"),
+    [orders]
+  );
+
   const totals = useMemo(() => {
-    const orderTotals = orders.reduce(
+    const orderTotals = activeOrders.reduce(
       (acc, o) => {
-        acc.revenue += o.customer_total;
+        acc.revenue += o.total_revenue; // includes every rider's tip
         acc.commission += o.commission_amount;
         acc.grossProfit += o.meal_bear_revenue;
-        acc.riderPayout += o.rider_earning;
+        // Platform rider isn't paid out, so don't count them as a payout.
+        acc.riderPayout += o.is_platform_rider_snapshot ? 0 : o.rider_earning;
         acc.restaurantPayable += o.restaurant_payable;
         acc.due += o.amount_due;
         return acc;
@@ -165,18 +181,18 @@ export function PlatformOverview({ orders, expenses }: Props) {
       totalExpenses,
       netProfit: orderTotals.grossProfit - totalExpenses,
     };
-  }, [orders, expenses]);
+  }, [activeOrders, expenses]);
 
   const periodTotals = useMemo(() => {
     const today = getBusinessDate();
     const weekStart = startOfBusinessWeek(today);
     const monthStart = startOfBusinessMonth(today);
     return {
-      daily: sumPeriod(orders, expenses, today),
-      weekly: sumPeriod(orders, expenses, weekStart),
-      monthly: sumPeriod(orders, expenses, monthStart),
+      daily: sumPeriod(activeOrders, expenses, today, today),
+      weekly: sumPeriod(activeOrders, expenses, weekStart, today),
+      monthly: sumPeriod(activeOrders, expenses, monthStart, today),
     };
-  }, [orders, expenses]);
+  }, [activeOrders, expenses]);
 
   const cards: StatCardProps[] = [
     { label: "Total Revenue", value: fmt(totals.revenue), icon: DollarSign },
@@ -195,6 +211,7 @@ export function PlatformOverview({ orders, expenses }: Props) {
 
   return (
     <div className="space-y-5">
+           console.log(orders[0]);
       <div
         className="grid gap-3 sm:gap-4"
         style={{ gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}

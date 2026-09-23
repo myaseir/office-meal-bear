@@ -92,6 +92,8 @@ export interface OrderResponse {
   amount_due: number;
   rider_earning: number;
   meal_bear_revenue: number;
+  total_revenue: number;
+ 
 
   calc_version: number;
   created_at: string;

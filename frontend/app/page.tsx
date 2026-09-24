@@ -344,10 +344,7 @@ export default function OrderEntryPage() {
             </p>
           )}
         </div>
-      </form>
-
-      {/* Submit bar — always visible, part of the layout, not floating over content */}
-      <div className="shrink-0 border-t border-[#E6E1F2] bg-white px-4 py-2.5">
+        <div className="shrink-0 border-t border-[#E6E1F2] bg-white px-4 py-2.5">
         <div className="max-w-md mx-auto">
           <button
             type="submit"
@@ -363,6 +360,10 @@ export default function OrderEntryPage() {
           </button>
         </div>
       </div>
+      </form>
+
+      {/* Submit bar — always visible, part of the layout, not floating over content */}
+      
     </div>
   );
 }

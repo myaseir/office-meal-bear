@@ -38,7 +38,8 @@ class OrderCalculatedFields:
     commission_amount: float
     restaurant_payable: float
     tip: float             # raw overcharge (amount_received - customer_total), audit-only
-    effective_tip: float   # NEW — what actually reached the rider (manual tip, else overcharge)
+    effective_tip: float 
+    total_revenue: float # NEW — what actually reached the rider (manual tip, else overcharge)
     amount_due: float
     rider_earning: float
     meal_bear_revenue: float

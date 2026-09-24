@@ -49,6 +49,7 @@ def _calculated_to_dict(calculated: OrderCalculatedFields) -> dict:
         "restaurant_payable": calculated.restaurant_payable,
         "tip": calculated.tip,
         "effective_tip": calculated.effective_tip,
+        "total_revenue": calculated.total_revenue,
         "amount_due": calculated.amount_due,
         "rider_earning": calculated.rider_earning,
         "meal_bear_revenue": calculated.meal_bear_revenue,
@@ -129,15 +130,62 @@ class MongoOrderRepository(OrderRepository):
                 "rider_id": doc["_id"],
                 "total_fuel": round(doc["total_fuel"], 2),
                 "total_rider_tip": round(doc["total_rider_tip"], 2),
-                # Platform-owned rider (e.g. "Self"): nothing is actually payable —
-                # the platform doesn't owe itself. Earning/fuel/tip stay as real
-                # tracked numbers; only the "pending payout" figure is zeroed.
                 "total_rider_margin": 0.0 if is_platform_rider else round(total_margin, 2),
                 "total_rider_earning": round(doc["total_rider_earning"], 2),
                 "order_count": doc["order_count"],
                 "is_platform_rider": is_platform_rider,
             })
         return results
+
+    async def aggregate_business_totals(self) -> dict:
+        """
+        Whole-business summary across all non-cancelled orders and riders. Every
+        rider's tip is included in total_revenue. total_meal_bear_revenue is the
+        profit figure: it is stored per order with the platform rider's earning
+        already left out, so summing it never subtracts the platform rider.
+        Identity per order: restaurant_payable + rider_earning + meal_bear_revenue
+        == total_revenue (for non-platform riders).
+        """
+        pipeline = [
+            {"$match": {"status": {"$ne": OrderStatus.CANCELLED.value}}},
+            {
+                "$group": {
+                    "_id": None,
+                    "total_revenue": {"$sum": "$calculated.total_revenue"},
+                    "total_tip": {"$sum": "$calculated.effective_tip"},
+                    "total_restaurant_payable": {"$sum": "$calculated.restaurant_payable"},
+                    "total_rider_earning": {"$sum": "$calculated.rider_earning"},
+                    "total_meal_bear_revenue": {"$sum": "$calculated.meal_bear_revenue"},
+                    "total_fuel": {"$sum": "$inputs.fuel"},
+                    "total_amount_due": {"$sum": "$calculated.amount_due"},
+                    "order_count": {"$sum": 1},
+                }
+            },
+        ]
+        result = await self._collection.aggregate(pipeline).to_list(length=1)
+        if not result:
+            return {
+                "total_revenue": 0.0,
+                "total_tip": 0.0,
+                "total_restaurant_payable": 0.0,
+                "total_rider_earning": 0.0,
+                "total_meal_bear_revenue": 0.0,
+                "total_fuel": 0.0,
+                "total_amount_due": 0.0,
+                "order_count": 0,
+            }
+
+        doc = result[0]
+        return {
+            "total_revenue": round(doc["total_revenue"], 2),
+            "total_tip": round(doc["total_tip"], 2),
+            "total_restaurant_payable": round(doc["total_restaurant_payable"], 2),
+            "total_rider_earning": round(doc["total_rider_earning"], 2),
+            "total_meal_bear_revenue": round(doc["total_meal_bear_revenue"], 2),
+            "total_fuel": round(doc["total_fuel"], 2),
+            "total_amount_due": round(doc["total_amount_due"], 2),
+            "order_count": doc["order_count"],
+        }
 
     async def list_filtered(
         self,
@@ -171,7 +219,11 @@ class MongoOrderRepository(OrderRepository):
         return _serialize(doc) if doc else None
 
     async def update(
-        self, order_id: str, inputs: OrderInputs, calculated: OrderCalculatedFields, calc_version: int
+        self,
+        order_id: str,
+        inputs: OrderInputs,
+        calculated: OrderCalculatedFields,
+        calc_version: int,
     ) -> dict | None:
         try:
             oid = ObjectId(order_id)
@@ -180,7 +232,13 @@ class MongoOrderRepository(OrderRepository):
 
         result = await self._collection.find_one_and_update(
             {"_id": oid},
-            {"$set": {"inputs": _inputs_to_dict(inputs), "calculated": _calculated_to_dict(calculated), "calc_version": calc_version}},
+            {
+                "$set": {
+                    "inputs": _inputs_to_dict(inputs),
+                    "calculated": _calculated_to_dict(calculated),
+                    "calc_version": calc_version,
+                }
+            },
             return_document=True,
         )
         return _serialize(result) if result else None

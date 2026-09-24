@@ -69,10 +69,10 @@ class OrderResponse(BaseModel):
     commission_amount: float
     restaurant_payable: float
     tip: float
-    effective_tip: float   # NEW
+    effective_tip: float
+    total_revenue: float   # customer_total + effective_tip
     amount_due: float
     rider_earning: float
     meal_bear_revenue: float
-
     calc_version: int
     created_at: datetime

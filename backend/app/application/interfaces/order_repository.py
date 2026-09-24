@@ -26,7 +26,16 @@ class OrderRepository(ABC):
 
     @abstractmethod
     async def aggregate_rider_totals(self) -> list[dict]:
-        """Per-rider totals across all orders: fuel, delivery margin, rider earning, order count."""
+        """Per-rider totals across all orders: fuel, tip, delivery margin, rider earning, order count."""
+
+    @abstractmethod
+    async def aggregate_business_totals(self) -> dict:
+        """
+        Whole-business totals across ALL orders and riders: total_revenue (includes every
+        rider's tip), total_tip, total_restaurant_payable, total_rider_earning,
+        total_meal_bear_revenue (profit; platform-rider earnings are not subtracted),
+        total_fuel, total_amount_due, order_count.
+        """
 
     @abstractmethod
     async def list_filtered(
@@ -43,9 +52,15 @@ class OrderRepository(ABC):
         """Fetch a single order by id."""
 
     @abstractmethod
-    async def update(self, order_id: str, inputs: OrderInputs, calculated: OrderCalculatedFields, calc_version: int) -> dict | None:
+    async def update(
+        self,
+        order_id: str,
+        inputs: OrderInputs,
+        calculated: OrderCalculatedFields,
+        calc_version: int,
+    ) -> dict | None:
         """Overwrite an order's inputs+calculated fields. Returns updated doc, or None if not found."""
-        
+
     @abstractmethod
     async def update_payment(
         self, order_id: str, payment_method: str, payment_status: str

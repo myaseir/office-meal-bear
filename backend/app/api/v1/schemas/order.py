@@ -1,6 +1,6 @@
 from datetime import date, datetime
+from pydantic import BaseModel, Field, model_validator
 
-from pydantic import BaseModel, Field
 
 from app.domain.entities.order import OrderStatus, PaymentMethod, PaymentStatus
 
@@ -63,16 +63,26 @@ class OrderResponse(BaseModel):
     amount_received: float
 
     # calculated (backend-authoritative)
-    # calculated (backend-authoritative)
     final_delivery: float
     customer_total: float
     commission_amount: float
     restaurant_payable: float
     tip: float
     effective_tip: float
-    total_revenue: float   # customer_total + effective_tip
+    total_revenue: float = 0.0  # customer_total + effective_tip
     amount_due: float
     rider_earning: float
     meal_bear_revenue: float
     calc_version: int
     created_at: datetime
+
+    @model_validator(mode="before")
+    @classmethod
+    def fill_total_revenue_for_old_orders(cls, data):
+        # Orders saved before total_revenue existed don't have it in MongoDB.
+        if isinstance(data, dict) and "total_revenue" not in data:
+            data = dict(data)
+            data["total_revenue"] = (
+                data.get("customer_total", 0.0) + data.get("effective_tip", 0.0)
+            )
+        return data
